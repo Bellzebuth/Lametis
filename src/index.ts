@@ -1,6 +1,11 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
+import authRoutes from "./routes/auth.js";
 import sqlite3 from "sqlite3";
+
+import initDb from "./db/schema.js";
+import initSeed from "./db/data.js";
+import protectedRoutes from "./routes/routes.js";
 
 sqlite3.verbose();
 
@@ -14,62 +19,24 @@ const db = new sqlite3.Database("db.sqlite3", (error) => {
   console.error(error);
 });
 
+initDb(db);
+initSeed(db);
+
 /**
  * @see https://hono.dev/
  */
 const app = new Hono();
 
+app.use("*", async (c, next) => {
+  c.set("db", db);
+  await next();
+});
+
+app.route("/auth", authRoutes);
+app.route("/protected", protectedRoutes);
+
 app.get("/", (c) => {
   return c.text("Hello Hono!");
-});
-
-app.get("/projects", (c) => {
-  return c.json([]);
-});
-
-app.get("/projects/:projectId", (c) => {
-  const { projectId } = c.req.param();
-
-  return c.json({
-    projectId,
-  });
-});
-
-app.post("/projects/", async (c) => {
-  const body = await c.req.json();
-
-  console.log(body);
-
-  return c.json({
-    success: true,
-  });
-});
-
-//
-
-app.get("/projects/:projectId/analyses", (c) => {
-  const { projectId } = c.req.param();
-
-  return c.json([]);
-});
-
-app.get("/projects/:projectId/analyses/:analysisId", (c) => {
-  const { analysisId } = c.req.param();
-
-  return c.json({
-    analysisId,
-  });
-});
-
-app.post("/projects/:projectId/analyses", async (c) => {
-  const { projectId } = c.req.param();
-  const body = await c.req.json();
-
-  console.log(body);
-
-  return c.json({
-    success: true,
-  });
 });
 
 const port = 3000;
