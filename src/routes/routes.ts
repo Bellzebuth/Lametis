@@ -81,9 +81,9 @@ protectedRoutes.post("/projects", authMiddleware, async (c) => {
   });
 });
 
-// list project's analysis
+// list project's analyses
 protectedRoutes.get(
-  "/projects/:projectId/analysis",
+  "/projects/:projectId/analyses",
   authMiddleware,
   async (c) => {
     const { projectId } = c.req.param();
@@ -106,12 +106,12 @@ protectedRoutes.get(
   }
 );
 
-// get analysis
+// get analyses
 protectedRoutes.get(
-  "/projects/:projectId/analyses/:analysisId",
+  "/projects/:projectId/analyses/:analysesId",
   authMiddleware,
   async (c) => {
-    const { projectId, analysisId } = c.req.param();
+    const { projectId, analysesId } = c.req.param();
     const user = c.get("user");
     const db = c.get("db");
 
@@ -121,7 +121,7 @@ protectedRoutes.get(
     return new Promise((resolve) => {
       db.get(
         `SELECT * FROM analyses WHERE id = ? AND project_id = ?`,
-        [analysisId, projectId],
+        [analysesId, projectId],
         (err, row) => {
           if (err) return resolve(c.json({ error: err.message }, 500));
           if (!row) return resolve(c.json({ error: "Not found" }, 404));
@@ -132,7 +132,7 @@ protectedRoutes.get(
   }
 );
 
-// create analysis
+// create analyses
 protectedRoutes.post(
   "/projects/:projectId/analyses",
   authMiddleware,

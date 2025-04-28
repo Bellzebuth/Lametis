@@ -4,10 +4,10 @@ import sqlite3 from "sqlite3";
 import type { User } from "../types.js";
 import { deleteCookie, setCookie } from "hono/cookie";
 
-const db = new sqlite3.Database("db.sqlite3");
 const auth = new Hono();
 
 auth.post("/login", async (c) => {
+  const db = c.get("db");
   const { name } = await c.req.json();
 
   return new Promise((resolve) => {
