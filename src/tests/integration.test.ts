@@ -11,41 +11,44 @@ let db: sqlite3.Database;
 let server: ReturnType<typeof serve>;
 let baseUrl: string;
 
+async function setupDatabase(database: sqlite3.Database) {
+  await new Promise<void>((resolve, reject) => {
+    database.serialize(() => {
+      database.run(`DROP TABLE IF EXISTS users`);
+      database.run(`DROP TABLE IF EXISTS projects`);
+      database.run(`DROP TABLE IF EXISTS project_access`);
+      database.run(`DROP TABLE IF EXISTS analyses`);
+
+      database.run(`CREATE TABLE users (id INT, name TEXT, role TEXT)`);
+      database.run(`CREATE TABLE projects (id INT, name TEXT, owner_id INT)`);
+      database.run(`CREATE TABLE project_access (project_id INT, user_id INT)`);
+      database.run(
+        `CREATE TABLE analyses (id INT, name TEXT, content TEXT, project_id INT, created_by TEXT)`,
+        (err) => {
+          if (err) reject(err);
+        }
+      );
+
+      database.run(`INSERT INTO users (id, name, role) VALUES 
+        (1, 'Alice', 'admin'), 
+        (2, 'Bob', 'manager'),
+        (3, 'Jean', 'reader')`);
+      database.run(`INSERT INTO projects (id, name, owner_id) VALUES 
+        (1, 'Project admin', 1),
+        (2, 'Project manager', 2)`);
+      database.run(
+        `INSERT INTO project_access (project_id, user_id) VALUES (1, 3)`,
+        (err) => {
+          if (err) reject(err);
+          resolve();
+        }
+      );
+    });
+  });
+}
+
 beforeAll(async () => {
   db = new sqlite3.Database(":memory:");
-
-  await new Promise<void>((resolve, reject) => {
-    db.serialize(() => {
-      db.run(`CREATE TABLE users (id TEXT, name TEXT, role TEXT)`);
-      db.run(`CREATE TABLE projects (id TEXT, name TEXT, owner_id TEXT)`);
-      db.run(`CREATE TABLE project_access (project_id TEXT, user_id TEXT)`);
-      db.run(
-        `CREATE TABLE analyses (id TEXT, name TEXT, content TEXT, project_id TEXT, created_by TEXT)`,
-        (err) => {
-          if (err) reject(err);
-          resolve();
-        }
-      );
-    });
-  });
-
-  await new Promise<void>((resolve, reject) => {
-    db.serialize(() => {
-      db.run(
-        `INSERT INTO users (id, name, role) VALUES ('user1', 'Alice', 'admin')`
-      );
-      db.run(
-        `INSERT INTO users (id, name, role) VALUES ('user2', 'Bob', 'manager')`
-      );
-      db.run(
-        `INSERT INTO projects (id, name, owner_id) VALUES ('proj1', 'Project 1', 'user1')`,
-        (err) => {
-          if (err) reject(err);
-          resolve();
-        }
-      );
-    });
-  });
 
   app = new Hono();
 
@@ -75,6 +78,10 @@ afterAll(async () => {
 });
 
 describe("Auth routes", () => {
+  beforeAll(async () => {
+    setupDatabase(db);
+  });
+
   it("should login successfully", async () => {
     const res = await fetch(`${baseUrl}/auth/login`, {
       method: "POST",
@@ -111,13 +118,15 @@ describe("Auth routes", () => {
   });
 });
 
-describe("Protected routes", () => {
+describe("Protected routes as Admin", () => {
   let token: string;
   let cookie: string;
 
   beforeAll(async () => {
+    setupDatabase(db);
+
     token = await signToken({
-      id: "user1",
+      id: 1,
       name: "Alice",
       role: "admin",
     });
@@ -134,11 +143,11 @@ describe("Protected routes", () => {
     const body = await res.json();
 
     expect(res.status).toBe(200);
-    expect(body.length).toBeGreaterThan(0);
+    expect(body.length).toBe(2);
   });
 
   it("should get a specific project", async () => {
-    const res = await fetch(`${baseUrl}/protected/projects/proj1`, {
+    const res = await fetch(`${baseUrl}/protected/projects/1`, {
       headers: {
         Cookie: cookie,
       },
@@ -146,7 +155,7 @@ describe("Protected routes", () => {
     const body = await res.json();
 
     expect(res.status).toBe(200);
-    expect(body.id).toBe("proj1");
+    expect(body.id).toBe(1);
   });
 
   it("should create a project", async () => {
@@ -157,8 +166,8 @@ describe("Protected routes", () => {
         Cookie: cookie,
       },
       body: JSON.stringify({
-        id: "proj2",
-        name: "Project 2",
+        id: 3,
+        name: "Project 3",
       }),
     });
     const body = await res.json();
@@ -168,7 +177,7 @@ describe("Protected routes", () => {
   });
 
   it("should list analyses (no analyses yet)", async () => {
-    const res = await fetch(`${baseUrl}/protected/projects/proj1/analyses`, {
+    const res = await fetch(`${baseUrl}/protected/projects/1/analyses`, {
       headers: {
         Cookie: cookie,
       },
@@ -181,14 +190,14 @@ describe("Protected routes", () => {
   });
 
   it("should create an analyses", async () => {
-    const res = await fetch(`${baseUrl}/protected/projects/proj1/analyses`, {
+    const res = await fetch(`${baseUrl}/protected/projects/1/analyses`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Cookie: cookie,
       },
       body: JSON.stringify({
-        id: "analyses1",
+        id: 1,
         name: "First analyses",
         content: "This is content",
       }),
@@ -200,18 +209,262 @@ describe("Protected routes", () => {
   });
 
   it("should get the created analyses", async () => {
-    const res = await fetch(
-      `${baseUrl}/protected/projects/proj1/analyses/analyses1`,
-      {
-        headers: {
-          Cookie: cookie,
-        },
-      }
-    );
+    const res = await fetch(`${baseUrl}/protected/projects/1/analyses/1`, {
+      headers: {
+        Cookie: cookie,
+      },
+    });
     const body = await res.json();
 
     expect(res.status).toBe(200);
-    expect(body.id).toBe("analyses1");
+    expect(body.id).toBe(1);
     expect(body.content).toBe("This is content");
+  });
+});
+
+describe("Protected routes as Manager", () => {
+  let token: string;
+  let cookie: string;
+
+  beforeAll(async () => {
+    setupDatabase(db);
+
+    token = await signToken({
+      id: 2,
+      name: "Bob",
+      role: "manager",
+    });
+
+    cookie = `session_token=${token}`;
+  });
+
+  it("should list projects", async () => {
+    const res = await fetch(`${baseUrl}/protected/projects`, {
+      headers: {
+        Cookie: cookie,
+      },
+    });
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.length).toBe(2);
+  });
+
+  it("should get a specific project", async () => {
+    const res = await fetch(`${baseUrl}/protected/projects/1`, {
+      headers: {
+        Cookie: cookie,
+      },
+    });
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.id).toBe(1);
+  });
+
+  it("should create a project", async () => {
+    const res = await fetch(`${baseUrl}/protected/projects`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: cookie,
+      },
+      body: JSON.stringify({
+        id: 3,
+        name: "Project 3",
+      }),
+    });
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.success).toBe(true);
+  });
+
+  it("should not list analyses", async () => {
+    const res = await fetch(`${baseUrl}/protected/projects/1/analyses`, {
+      headers: {
+        Cookie: cookie,
+      },
+    });
+    const body = await res.json();
+
+    expect(res.status).toBe(403);
+    expect(body.error).toBe("Forbidden");
+  });
+
+  it("should list analyses (no analyses yet)", async () => {
+    const res = await fetch(`${baseUrl}/protected/projects/2/analyses`, {
+      headers: {
+        Cookie: cookie,
+      },
+    });
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(Array.isArray(body)).toBe(true);
+    expect(body.length).toBe(0);
+  });
+
+  it("should create an analyses on non-owned project", async () => {
+    const res = await fetch(`${baseUrl}/protected/projects/1/analyses`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: cookie,
+      },
+      body: JSON.stringify({
+        id: 1,
+        name: "First analyses",
+        content: "This is content",
+      }),
+    });
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.success).toBe(true);
+  });
+
+  it("shouldn't get the created analyses", async () => {
+    const res = await fetch(`${baseUrl}/protected/projects/1/analyses/1`, {
+      headers: {
+        Cookie: cookie,
+      },
+    });
+    const body = await res.json();
+
+    expect(res.status).toBe(403);
+    expect(body.error).toBe("Forbidden");
+  });
+
+  it("should get analyse", async () => {
+    var res = await fetch(`${baseUrl}/protected/projects/2/analyses`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: cookie,
+      },
+      body: JSON.stringify({
+        id: 1,
+        name: "First analyses",
+        content: "This is content",
+      }),
+    });
+    var body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.success).toBe(true);
+
+    res = await fetch(`${baseUrl}/protected/projects/2/analyses/1`, {
+      headers: {
+        Cookie: cookie,
+      },
+    });
+    body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.id).toBe(1);
+  });
+});
+
+describe("Protected routes as Reader", () => {
+  let token: string;
+  let cookie: string;
+
+  beforeAll(async () => {
+    setupDatabase(db);
+
+    token = await signToken({
+      id: 3,
+      name: "Jean",
+      role: "reader",
+    });
+
+    cookie = `session_token=${token}`;
+  });
+
+  it("should list projects", async () => {
+    const res = await fetch(`${baseUrl}/protected/projects`, {
+      headers: {
+        Cookie: cookie,
+      },
+    });
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.length).toBe(2);
+  });
+
+  it("should get a specific project", async () => {
+    const res = await fetch(`${baseUrl}/protected/projects/1`, {
+      headers: {
+        Cookie: cookie,
+      },
+    });
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.id).toBe(1);
+  });
+
+  it("shouldn't create a project", async () => {
+    const res = await fetch(`${baseUrl}/protected/projects`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: cookie,
+      },
+      body: JSON.stringify({
+        id: 3,
+        name: "Project 3",
+      }),
+    });
+    const body = await res.json();
+
+    expect(res.status).toBe(403);
+    expect(body.error).toBe("Forbidden");
+  });
+
+  it("should list analyses because of project_access", async () => {
+    const res = await fetch(`${baseUrl}/protected/projects/1/analyses`, {
+      headers: {
+        Cookie: cookie,
+      },
+    });
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(Array.isArray(body)).toBe(true);
+    expect(body.length).toBe(0);
+  });
+
+  it("should not list analyses", async () => {
+    const res = await fetch(`${baseUrl}/protected/projects/2/analyses`, {
+      headers: {
+        Cookie: cookie,
+      },
+    });
+    const body = await res.json();
+
+    expect(res.status).toBe(403);
+    expect(body.error).toBe("Forbidden");
+  });
+
+  it("shouldn't create an analyses", async () => {
+    const res = await fetch(`${baseUrl}/protected/projects/1/analyses`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: cookie,
+      },
+      body: JSON.stringify({
+        id: 1,
+        name: "First analyses",
+        content: "This is content",
+      }),
+    });
+    const body = await res.json();
+
+    expect(res.status).toBe(403);
+    expect(body.error).toBe("Forbidden");
   });
 });

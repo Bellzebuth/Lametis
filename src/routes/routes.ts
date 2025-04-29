@@ -3,16 +3,21 @@ import { authMiddleware } from "../middlewares/auth.js";
 import type { Database } from "sqlite3";
 
 const protectedRoutes = new Hono();
+const read = "read";
+const write = "write";
 
 // check access rights to a project
 async function hasProjectAccess(
   db: Database,
   userId: string,
   userRole: string,
-  projectId: string
+  projectId: string,
+  action: string
 ): Promise<boolean> {
   return new Promise((resolve) => {
     if (userRole === "admin") return resolve(true);
+    if (userRole === "manager" && action === write) return resolve(true);
+    if (userRole === "reader" && action === write) return resolve(false);
 
     db.get(
       `SELECT * FROM projects WHERE id = ? AND owner_id = ?`,
@@ -69,6 +74,10 @@ protectedRoutes.post("/projects", authMiddleware, async (c) => {
   const user = c.get("user");
   const db = c.get("db");
 
+  if (user.role === "reader") {
+    return c.json({ error: "Forbidden" }, 403);
+  }
+
   return new Promise((resolve) => {
     db.run(
       `INSERT INTO projects (id, name, owner_id) VALUES (?, ?, ?)`,
@@ -90,7 +99,13 @@ protectedRoutes.get(
     const user = c.get("user");
     const db = c.get("db");
 
-    const access = await hasProjectAccess(db, user.id, user.role, projectId);
+    const access = await hasProjectAccess(
+      db,
+      user.id,
+      user.role,
+      projectId,
+      read
+    );
     if (!access) return c.json({ error: "Forbidden" }, 403);
 
     return new Promise((resolve) => {
@@ -115,7 +130,13 @@ protectedRoutes.get(
     const user = c.get("user");
     const db = c.get("db");
 
-    const access = await hasProjectAccess(db, user.id, user.role, projectId);
+    const access = await hasProjectAccess(
+      db,
+      user.id,
+      user.role,
+      projectId,
+      read
+    );
     if (!access) return c.json({ error: "Forbidden" }, 403);
 
     return new Promise((resolve) => {
@@ -142,7 +163,13 @@ protectedRoutes.post(
     const user = c.get("user");
     const db = c.get("db");
 
-    const access = await hasProjectAccess(db, user.id, user.role, projectId);
+    const access = await hasProjectAccess(
+      db,
+      user.id,
+      user.role,
+      projectId,
+      write
+    );
     if (!access) return c.json({ error: "Forbidden" }, 403);
 
     return new Promise((resolve) => {
