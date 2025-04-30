@@ -1,43 +1,8 @@
 import { Hono } from "hono";
 import { authMiddleware } from "../middlewares/auth.js";
-import type { Database } from "sqlite3";
+import { hasProjectAccess, READ, WRITE } from "../utils/access.js";
 
-const protectedRoutes = new Hono();
-const read = "read";
-const write = "write";
-
-// check access rights to a project
-async function hasProjectAccess(
-  db: Database,
-  userId: string,
-  userRole: string,
-  projectId: string,
-  action: string
-): Promise<boolean> {
-  return new Promise((resolve) => {
-    if (userRole === "admin") return resolve(true);
-    if (userRole === "manager" && action === write) return resolve(true);
-    if (userRole === "reader" && action === write) return resolve(false);
-
-    db.get(
-      `SELECT * FROM projects WHERE id = ? AND owner_id = ?`,
-      [projectId, userId],
-      (err, project) => {
-        if (err) return resolve(false);
-        if (project) return resolve(true);
-
-        db.get(
-          `SELECT * FROM project_access WHERE project_id = ? AND user_id = ?`,
-          [projectId, userId],
-          (err, access) => {
-            if (err) return resolve(false);
-            resolve(!!access);
-          }
-        );
-      }
-    );
-  });
-}
+export const protectedRoutes = new Hono();
 
 // list projects
 protectedRoutes.get("/projects", authMiddleware, (c) => {
@@ -104,7 +69,7 @@ protectedRoutes.get(
       user.id,
       user.role,
       projectId,
-      read
+      READ
     );
     if (!access) return c.json({ error: "Forbidden" }, 403);
 
@@ -135,7 +100,7 @@ protectedRoutes.get(
       user.id,
       user.role,
       projectId,
-      read
+      READ
     );
     if (!access) return c.json({ error: "Forbidden" }, 403);
 
@@ -168,7 +133,7 @@ protectedRoutes.post(
       user.id,
       user.role,
       projectId,
-      write
+      WRITE
     );
     if (!access) return c.json({ error: "Forbidden" }, 403);
 

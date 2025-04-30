@@ -5,7 +5,7 @@ import sqlite3 from "sqlite3";
 
 import initDb from "./db/schema.js";
 import initSeed from "./db/data.js";
-import protectedRoutes from "./routes/routes.js";
+import protectedRoutes from "./routes/analyses.js";
 
 sqlite3.verbose();
 

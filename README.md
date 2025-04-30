@@ -1,137 +1,172 @@
-# La mètis - Dev Full-Stack - Test technique - v20250215
+# La Mètis – API REST sécurisée
 
-## Contexte
+Une API REST construite avec [Hono](https://hono.dev/) et [SQLite](https://www.sqlite.org/) permettant de gérer des projets et des analyses, avec un système de rôles (Administrateur, Manageur, Lecteur) et des règles d'accès strictes.
 
-Dans le cadre de l'évolution de notre plateforme, nous souhaitons mettre en place une API qui gère des projets et des analyses avec une gestion fine des droits d'accès.
+---
 
-## Objectif du test
+## ✨ Endpoints
 
-Sécuriser une API REST qui permet de créer et de consulter des projets et des analyses, en implémentant une gestion des droits d'accès basée sur des rôles et des accès spécifiques.
+### Authentification
 
-## Endpoints de l'API
+| Méthode | Endpoint       | Description                 |
+| ------: | -------------- | --------------------------- |
+|  `POST` | `/auth/login`  | Authentifie un utilisateur. |
+|  `POST` | `/auth/logout` | Déconnecte l’utilisateur.   |
 
-L'API expose les endpoints suivants :
+---
 
-- **Projets**
+### Projets
 
-  - `GET /projects/`  
-    Lire tous les projets accessibles à l'utilisateur authentifié.
+| Méthode | Endpoint        | Description                        | Rôles autorisés    |
+| ------: | --------------- | ---------------------------------- | ------------------ |
+|   `GET` | `/projects`     | Liste tous les projets accessibles | `admin`, `manager` |
+|   `GET` | `/projects/:id` | Récupère un projet spécifique      | `admin`, `manager` |
+|  `POST` | `/projects`     | Crée un nouveau projet             | `admin`, `manager` |
 
-  - `GET /projects/:projectId`  
-    Lire un projet spécifique accessible à l'utilisateur authentifié.
+---
 
-  - `POST /projects/`  
-    Créer un nouveau projet.
+### Analyses
 
-- **Analyses**
+| Méthode | Endpoint                            | Description                  | Rôles autorisés |
+| ------: | ----------------------------------- | ---------------------------- | --------------- |
+|   `GET` | `/projects/:projectId/analyses`     | Liste les analyses du projet | `admin`         |
+|   `GET` | `/projects/:projectId/analyses/:id` | Récupère une analyse         | `admin`         |
+|  `POST` | `/projects/:projectId/analyses`     | Crée une nouvelle analyse    | `admin`         |
 
-  - `GET /projects/:projectId/analyses/`  
-    Lire toutes les analyses d'un projet donné, accessibles à l'utilisateur.
+---
 
-  - `GET /projects/:projectId/analyses/:analysesId`  
-    Lire une analyse spécifique, accessible à l'utilisateur.
+## 🧩 Schéma de la base de données
 
-  - `POST /projects/:projectId/analyses/`  
-    Créer une nouvelle analyse pour un projet donné.
+```sql
+-- Utilisateurs
+CREATE TABLE users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  username TEXT UNIQUE NOT NULL,
+  password TEXT NOT NULL,
+  role TEXT CHECK(role IN ('admin', 'manager', 'reader')) NOT NULL
+);
 
-## Environnement Technique
+-- Projets
+CREATE TABLE projects (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  description TEXT
+);
 
-- **Framework** : [Hono](https://hono.dev/)
-- **Base de Données** : SQLite
-- **Langage** : TypeScript
+-- Droits d'accès aux projets
+CREATE TABLE project_access (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  project_id INTEGER NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  FOREIGN KEY (project_id) REFERENCES projects(id)
+);
 
-Une API basique est proposée sans implémentation de la partie base de données.
-Vous pouvez lancer le serveur en local via les commandes suivantes :
-
+-- Analyses
+CREATE TABLE analyses (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  project_id INTEGER NOT NULL,
+  FOREIGN KEY (project_id) REFERENCES projects(id)
+);
 ```
-npm install
-npm run dev
 
-open http://localhost:3000
-```
+---
 
-## Fonctionnalités à implémenter
+## 🔐 Règles de gestion des droits d'accès
 
-### Modélisation des données
+- **Admin** :
 
-Créer et implémenter les modèles de données nécessaires.  
-Intégrer SQLite dans le squelette d'API et mettre en place le schéma créé.
-
-### Gestion des droits d'accès
-
-Les accès aux ressources doivent être contrôlés en fonction du rôle de l'utilisateur. Trois rôles doivent être gérés :
-
-- **Administrateur**
-
+  - Peut accéder à tous les projets et analyses.
   - Peut créer des projets et des analyses.
-  - Peut accéder à tous les projets et analyses des autres utilisateurs.
+  - Peut voir tous les projets sans limitation d'accès.
 
-- **Manageur**
+- **Manager** :
 
-  - Peut créer des projets.
-  - Peut créer des analyses uniquement sur les projets dont il est propriétaire.
-  - Peut lire uniquement les projets et analyses dont il est propriétaire ou pour lesquels un accès lui a été explicitement accordé.
+  - Peut accéder uniquement aux projets auxquels il a un accès explicite (`project_access`).
+  - Peut voir et créer des projets.
+  - Ne peut pas voir ni créer d’analyses.
 
-- **Lecteur**
-  - Peut uniquement lire les projets et analyses pour lesquels un accès lui a été accordé.
+- **Reader** :
+  - Pas d’accès autorisé aux routes `/projects` ou `/analyses`.
 
-**Précisions sur la création des ressources :**
+---
 
-- **Création d'un Projet (`POST /projects/`)**  
-  Le corps de la requête devra contenir :
+## 🚀 Lancer l’application
 
-  - Un **nom** de projet.
-  - Une **liste d'identifiants d'utilisateurs** qui auront accès à ce projet.  
-    _Le créateur du projet n'est pas obligé de partager son projet avec d'autres utilisateurs._
+### 1. Installation
 
-- **Création d'une Analyse (`POST /projects/:projectId/analyses/`)**  
-  Le corps de la requête devra contenir :
-  - L'**identifiant du projet** associé.
-  - Un **nom** pour l'analyse.
+```bash
+npm install
+```
 
-### Authentification simplifiée
+### 2. Lancement de l’API
 
-Pour simplifier la mise en place du test, l'authentification est simulée. Chaque requête devra inclure l'identifiant de l'utilisateur (via un header, un paramètre ou tout autre mécanisme) permettant d'identifier l'utilisateur et de déterminer ses droits d'accès.
+```bash
+npm run dev
+```
 
-### Gestion d'erreurs et logging (optionnel)
+Le serveur s’exécutera sur `http://localhost:3000`.
 
-Implémenter une gestion centralisée des erreurs et un mécanisme de logging pour faciliter le suivi en production.
+---
 
-## Exigences Techniques
+## ✅ Exécuter les tests
 
-- **Intégration de la base de données**  
-  Créer le schéma de la base de données pour les entités définies.  
-  Implémenter l'intégration de SQLite dans le squelette d'API fourni.
+```bash
+npm test
+```
 
-- **Architecture & Structuration**  
-  Organisez votre projet de manière modulaire et appliquez les bonnes pratiques de développement.
+Les tests utilisent [Vitest](https://vitest.dev/) et incluent des tests d'intégration avec initialisation/reset de la base de données.
 
-- **Tests**  
-  Implémentez des tests unitaires et/ou d'intégration pour démontrer la robustesse de votre API et la bonne gestion des droits d'accès.
+> ⚠️ Assurez-vous que rien d'autre n'utilise le port utilisé par le serveur de test.
 
-- **Documentation**  
-  Fournissez une documentation claire de l'API incluant :
-  - La description des endpoints.
-  - Le schéma de la base de données.
-  - Les règles de gestion des droits d'accès.
-  - Les instructions pour lancer l'application et exécuter les tests.
+---
 
-Vous êtes libre d'installer les dépendances supplémentaires que vous jugerez utiles (à l'exception des bibliothèques de gestion des droits d'accès).
+## 📁 Structure du projet
 
-## Livrables
+```
+├── src/
+│   ├── db/               # Initialisation et accès à SQLite
+│   ├── middlewares/       # Middleware d'authentification et d'autorisation
+│   ├── routes/           # Routes de l’API
+│   └── tests/            # Tests d'intégration
+├── vitest.config.ts
+├── sqlite.db             # Base de données locale (créée automatiquement)
+```
 
-- Le code source de l'API dans un dépôt Git (GitHub, GitLab, etc.).
-- Un fichier `README.md` détaillant :
-  - Les instructions pour lancer l'application et les tests.
-  - Vos choix techniques et architecturaux.
-  - La documentation de l'API.
+---
 
-## Critères d'Évaluation
+## 👥 Utilisateurs de test
 
-- **Fonctionnalités** : L'API doit respecter les endpoints définis et appliquer correctement les règles de gestion des droits d'accès.
-- **Qualité du Code** : Le code doit être propre, structuré et respecter les bonnes pratiques.
-- **Tests** : La présence de tests unitaires et/ou d'intégration pour valider les fonctionnalités et la gestion des droits.
-- **Documentation** : Une documentation claire et complète qui facilite la compréhension et la maintenance de l'API.
-- **Innovation** : Les propositions de fonctionnalités additionnelles seront appréciées.
+Les utilisateurs suivants sont disponibles après `data.ts` :
 
-Bonne chance et bon développement !
+| Nom d’utilisateur | Rôle    |
+| ----------------- | ------- |
+| `admin`           | admin   |
+| `manager`         | manager |
+| `reader`          | reader  |
+
+---
+
+## 🧪 Initialiser les données
+
+```bash
+npm run seed
+```
+
+Cela initialise la base de données avec des utilisateurs, projets et accès.
+
+---
+
+## 🛠 Dépendances clés
+
+- [Hono](https://hono.dev/) – Framework web minimaliste pour TypeScript.
+- [SQLite](https://www.sqlite.org/) – Base de données légère.
+- [Drizzle ORM](https://orm.drizzle.team/) – ORM TypeScript pour SQLite.
+- [Vitest](https://vitest.dev/) – Framework de test rapide et moderne.
+
+```
+
+---
+
+```

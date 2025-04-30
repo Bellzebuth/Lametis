@@ -1,14 +1,14 @@
 import { Hono } from "hono";
 import { signToken } from "../utils/jwt.js";
-import sqlite3 from "sqlite3";
 import type { User } from "../types.js";
 import { deleteCookie, setCookie } from "hono/cookie";
+import { hashPassword } from "../utils/hash.js";
 
 const auth = new Hono();
 
 auth.post("/login", async (c) => {
   const db = c.get("db");
-  const { name } = await c.req.json();
+  const { name, password } = await c.req.json();
 
   return new Promise((resolve) => {
     db.get(
@@ -17,6 +17,11 @@ auth.post("/login", async (c) => {
       async (err, user: User) => {
         if (err || !user) {
           return resolve(c.json({ error: "User not found" }, 401));
+        }
+
+        const hashed = await hashPassword(password);
+        if (user.password !== hashed) {
+          return c.json({ error: "Invalid credentials" }, 401);
         }
 
         const token = await signToken({

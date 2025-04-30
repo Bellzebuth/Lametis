@@ -1,13 +1,22 @@
 import sqlite3 from "sqlite3";
+import { hashPassword } from "../utils/hash.js";
 
 function initSeed(db: sqlite3.Database) {
-  db.serialize(() => {
+  db.serialize(async () => {
     // some users
-    db.run(`INSERT OR IGNORE INTO users (id, name, role) VALUES 
-    ('1', 'Admin', 'admin'),
-    ('2', 'Manager', 'manager'),
-    ('3', 'Reader', 'reader')
-  `);
+    const users = [
+      { id: 1, name: "admin", password: "admin", role: "admin" },
+      { id: 2, name: "manager", password: "manager", role: "manager" },
+      { id: 3, name: "reader", password: "reader", role: "reader" },
+    ];
+
+    for (const user of users) {
+      const hashed = await hashPassword(user.password);
+      db.run(
+        "INSERT INTO users (id, name, password, role) VALUES (?, ?, ?, ?)",
+        [user.id, user.name, hashed, user.role]
+      );
+    }
 
     // some projects
     db.run(`INSERT OR IGNORE INTO projects (id, name, owner_id) VALUES 

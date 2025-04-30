@@ -7,6 +7,7 @@ function initDb(db: sqlite3.Database) {
       CREATE TABLE IF NOT EXISTS users (
         id INT PRIMARY KEY,
         name TEXT NOT NULL,
+        password TEXT NOT NULL,
         role TEXT NOT NULL CHECK(role IN ('admin', 'manager', 'reader'))
       )
     `);

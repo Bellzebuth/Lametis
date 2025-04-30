@@ -3,6 +3,7 @@ export type Role = "admin" | "manager" | "reader";
 export type User = {
   id: string;
   name: string;
+  password: string;
   role: Role;
 };
 
